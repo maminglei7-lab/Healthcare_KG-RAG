@@ -1,5 +1,5 @@
 import sys
-sys.path.append(r"D:\Desktop\project\etl")
+sys.path.append(r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\etl")
 
 import pandas as pd
 from lineage_decorator import capture_lineage
@@ -34,15 +34,36 @@ def transform_patients(df):
 # ─────────────────────────────────────────────
 
 @capture_lineage(
-    sources=["admissions.deathtime", "admissions.edregtime", "admissions.edouttime"],
-    target="admissions.deathtime,admissions.edregtime,admissions.edouttime",
+    sources=["admissions.deathtime"],
+    target="admissions.deathtime",
     transformation="fill_missing",
-    description="Fill missing optional time fields (deathtime, edregtime, edouttime) with 'unknown'"
+    description="Fill missing deathtime with 'unknown'"
 )
-def clean_admissions_nulls(df):
+def clean_admissions_deathtime(df):
     df = df.copy()
-    for col in ["deathtime", "edregtime", "edouttime"]:
-        df[col] = df[col].fillna("unknown")
+    df["deathtime"] = df["deathtime"].fillna("unknown")
+    return df
+
+@capture_lineage(
+    sources=["admissions.edregtime"],
+    target="admissions.edregtime",
+    transformation="fill_missing",
+    description="Fill missing edregtime with 'unknown'"
+)
+def clean_admissions_edregtime(df):
+    df = df.copy()
+    df["edregtime"] = df["edregtime"].fillna("unknown")
+    return df
+
+@capture_lineage(
+    sources=["admissions.edouttime"],
+    target="admissions.edouttime",
+    transformation="fill_missing",
+    description="Fill missing edouttime with 'unknown'"
+)
+def clean_admissions_edouttime(df):
+    df = df.copy()
+    df["edouttime"] = df["edouttime"].fillna("unknown")
     return df
 
 @capture_lineage(
@@ -69,7 +90,9 @@ def clean_admissions_marital(df):
 
 def transform_admissions(df):
     print(f"[Transform] admissions Start: {len(df)} rows")
-    df = clean_admissions_nulls(df)
+    df = clean_admissions_deathtime(df)
+    df = clean_admissions_edregtime(df)
+    df = clean_admissions_edouttime(df)
     df = clean_admissions_language(df)
     df = clean_admissions_marital(df)
     before = len(df)

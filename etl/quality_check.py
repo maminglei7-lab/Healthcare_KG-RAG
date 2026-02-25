@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 
-CLEANED_DIR = r"D:\Desktop\project\data\cleaned"
+CLEANED_DIR = r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\data\cleaned"
 
 class QualityReport:
     def __init__(self, table_name):

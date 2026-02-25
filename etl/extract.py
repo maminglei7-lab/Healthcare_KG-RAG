@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 
-DEFAULT_RAW_DIR = r"D:\Desktop\project\data\raw"
+DEFAULT_RAW_DIR = r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\data\raw"
 
 FILES = [
     "patients.csv.gz",

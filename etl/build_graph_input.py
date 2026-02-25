@@ -1,5 +1,5 @@
 import sys
-sys.path.append(r"D:\Desktop\project\etl")
+sys.path.append(r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\etl")
 
 import pandas as pd
 import os
@@ -12,8 +12,8 @@ MODE = "demo"   # Switch to "full" to view actual data
 
 PATHS = {
     "demo": {
-        "cleaned":     r"D:\Desktop\project\data\cleaned",
-        "graph_input": r"D:\Desktop\project\data\graph_input",
+        "cleaned":     r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\data\cleaned",
+        "graph_input": r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\data\graph_input",
     },
     "full": {
         "cleaned":     r"D:\Desktop\project\data\cleaned_full",
@@ -23,7 +23,7 @@ PATHS = {
 
 CLEANED_DIR  = PATHS[MODE]["cleaned"]
 GRAPH_DIR    = PATHS[MODE]["graph_input"]
-LINEAGE_PATH = r"D:\Desktop\project\lineage\lineage.json"
+LINEAGE_PATH = r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\lineage\lineage.json"
 
 NODES_DIR = os.path.join(GRAPH_DIR, "nodes")
 RELS_DIR  = os.path.join(GRAPH_DIR, "relationships")
