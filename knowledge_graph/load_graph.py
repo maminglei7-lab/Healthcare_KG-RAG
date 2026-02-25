@@ -4,7 +4,7 @@ from neo4j import GraphDatabase
 # ─────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────
-URI = "neo4j://127.0.0.1:7687"
+URI      = "neo4j://127.0.0.1:7687"
 USERNAME = "neo4j"
 PASSWORD = "Mml19980131!!!!"
 
@@ -116,6 +116,16 @@ def load_transformations(session):
         rows)
     print(f"✓ Transformations: {len(rows)}")
 
+def load_tables(session):
+    df = pd.read_csv(f"{NODES_DIR}/tables.csv")
+    rows = df.rename(columns={"tableId:ID": "tableId"}).drop(columns=[":LABEL"]).to_dict("records")
+    run(session,
+        "UNWIND $rows AS r "
+        "MERGE (t:Table {tableId: r.tableId}) "
+        "SET t.tableName = r.tableName, t.description = r.description",
+        rows)
+    print(f"✓ Tables: {len(rows)}")
+
 # ─────────────────────────────────────────
 # 4. Import Relationships
 # ─────────────────────────────────────────
@@ -162,6 +172,16 @@ def load_derived_from(session):
         rows)
     print(f"✓ DERIVED_FROM: {len(rows)}")
 
+def load_belongs_to(session):
+    df = pd.read_csv(f"{RELS_DIR}/belongs_to.csv")
+    rows = df.rename(columns={":START_ID": "start", ":END_ID": "end"}).to_dict("records")
+    run(session,
+        "UNWIND $rows AS r "
+        "MATCH (f:Field {fieldId: r.start}), (t:Table {tableId: r.end}) "
+        "MERGE (f)-[:BELONGS_TO]->(t)",
+        rows)
+    print(f"✓ BELONGS_TO: {len(rows)}")
+
 def load_transformed_by(session):
     df = pd.read_csv(f"{RELS_DIR}/transformed_by.csv")
     rows = df.rename(columns={":START_ID": "start", ":END_ID": "end"}).to_dict("records")
@@ -189,6 +209,7 @@ if __name__ == "__main__":
         load_diagnoses(session)
         load_labtests(session)
         load_fields(session)
+        load_tables(session)
         load_transformations(session)
 
         print("\n=== Loading relationships ===")
@@ -196,6 +217,7 @@ if __name__ == "__main__":
         load_has_diagnosis(session)
         load_has_lab_result(session)
         load_derived_from(session)
+        load_belongs_to(session)
         load_transformed_by(session)
 
         print("\nAll done! Graph loaded successfully.")
