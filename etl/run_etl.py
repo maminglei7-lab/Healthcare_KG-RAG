@@ -1,5 +1,5 @@
 import sys
-sys.path.append(r"D:\Desktop\project\etl")
+sys.path.append(r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\etl")
 
 import os
 from extract import load_all
@@ -12,12 +12,12 @@ MODE = "demo"   # Switch to "full" to view actual data
 
 PATHS = {
     "demo": {
-        "raw":     r"D:\Desktop\project\data\raw",
-        "cleaned": r"D:\Desktop\project\data\cleaned",
+        "raw":     r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\data\raw",
+        "cleaned": r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\data\cleaned",
     },
     "full": {
-        "raw":     r"D:\Desktop\project\data\raw_full",
-        "cleaned": r"D:\Desktop\project\data\cleaned_full",
+        "raw":     r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\data\raw_full",
+        "cleaned": r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\data\cleaned_full",
     }
 }
 
@@ -33,7 +33,7 @@ def save_cleaned(tables):
         df.to_csv(out_path, index=False, encoding="utf-8")
         print(f"[Save] {name}.csv → {len(df)} rows")
 
-LINEAGE_PATH = r"D:\Desktop\project\lineage\lineage.json"
+LINEAGE_PATH = r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\lineage\lineage.json"
 
 def reset_lineage():
     """Clear lineage.json before each run to prevent duplicate accumulation."""
@@ -64,4 +64,4 @@ if __name__ == "__main__":
     print("\nETL Completed")
     print(f"   MODE    : {MODE.upper()}")
     print(f"   Cleaning → {CLEANED_DIR}")
-    print(f"   Lineage  → D:\\Desktop\\project\\lineage\\lineage.json")
+    print(f"   Lineage  → D:\\Desktop\\DAMG 7374\\healthcare_lineagetracking\\lineage\\lineage.json")

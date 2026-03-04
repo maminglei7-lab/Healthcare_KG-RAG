@@ -1,0 +1,155 @@
+{
+  "lineage_records": [
+    {
+      "transformation_id": "t_001",
+      "transform_type": "IMPUTATION",
+      "source_fields": [
+        "f_patients_dod"
+      ],
+      "target_fields": [
+        "f_patients_dod"
+      ],
+      "logic": "Fill missing dod values with 'unknown' to indicate no recorded death date",
+      "script_ref": "transform.py",
+      "timestamp": "2026-02-25 14:17:55",
+      "records_affected": 100,
+      "records_rejected": 0
+    },
+    {
+      "transformation_id": "t_002",
+      "transform_type": "IMPUTATION",
+      "source_fields": [
+        "f_admissions_deathtime"
+      ],
+      "target_fields": [
+        "f_admissions_deathtime"
+      ],
+      "logic": "Fill missing deathtime with 'unknown'",
+      "script_ref": "transform.py",
+      "timestamp": "2026-02-25 14:17:55",
+      "records_affected": 275,
+      "records_rejected": 0
+    },
+    {
+      "transformation_id": "t_003",
+      "transform_type": "IMPUTATION",
+      "source_fields": [
+        "f_admissions_edregtime"
+      ],
+      "target_fields": [
+        "f_admissions_edregtime"
+      ],
+      "logic": "Fill missing edregtime with 'unknown'",
+      "script_ref": "transform.py",
+      "timestamp": "2026-02-25 14:17:56",
+      "records_affected": 275,
+      "records_rejected": 0
+    },
+    {
+      "transformation_id": "t_004",
+      "transform_type": "IMPUTATION",
+      "source_fields": [
+        "f_admissions_edouttime"
+      ],
+      "target_fields": [
+        "f_admissions_edouttime"
+      ],
+      "logic": "Fill missing edouttime with 'unknown'",
+      "script_ref": "transform.py",
+      "timestamp": "2026-02-25 14:17:56",
+      "records_affected": 275,
+      "records_rejected": 0
+    },
+    {
+      "transformation_id": "t_005",
+      "transform_type": "STANDARDIZATION",
+      "source_fields": [
+        "f_admissions_language"
+      ],
+      "target_fields": [
+        "f_admissions_language"
+      ],
+      "logic": "Replace '?' values in language field with 'unknown'",
+      "script_ref": "transform.py",
+      "timestamp": "2026-02-25 14:17:56",
+      "records_affected": 275,
+      "records_rejected": 0
+    },
+    {
+      "transformation_id": "t_006",
+      "transform_type": "IMPUTATION",
+      "source_fields": [
+        "f_admissions_marital_status"
+      ],
+      "target_fields": [
+        "f_admissions_marital_status"
+      ],
+      "logic": "Fill missing marital_status values with 'unknown'",
+      "script_ref": "transform.py",
+      "timestamp": "2026-02-25 14:17:56",
+      "records_affected": 275,
+      "records_rejected": 0
+    },
+    {
+      "transformation_id": "t_007",
+      "transform_type": "STANDARDIZATION",
+      "source_fields": [
+        "f_diagnoses_icd_icd_code",
+        "f_diagnoses_icd_icd_version"
+      ],
+      "target_fields": [
+        "f_diagnoses_icd_diagnosis_id"
+      ],
+      "logic": "Generate diagnosis_id = icd_code + '_v' + icd_version to avoid ICD-9/10 code collisions",
+      "script_ref": "transform.py",
+      "timestamp": "2026-02-25 14:17:56",
+      "records_affected": 4506,
+      "records_rejected": 0
+    },
+    {
+      "transformation_id": "t_008",
+      "transform_type": "IMPUTATION",
+      "source_fields": [
+        "f_labevents_valuenum"
+      ],
+      "target_fields": [
+        "f_labevents_valuenum"
+      ],
+      "logic": "Fill missing valuenum with per-itemid median; fallback to global median if entire group is null",
+      "script_ref": "transform.py",
+      "timestamp": "2026-02-25 14:17:56",
+      "records_affected": 107727,
+      "records_rejected": 0
+    },
+    {
+      "transformation_id": "t_009",
+      "transform_type": "IMPUTATION",
+      "source_fields": [
+        "f_labevents_flag"
+      ],
+      "target_fields": [
+        "f_labevents_flag"
+      ],
+      "logic": "Fill missing flag values with 'normal' to indicate no abnormality recorded",
+      "script_ref": "transform.py",
+      "timestamp": "2026-02-25 14:17:56",
+      "records_affected": 107727,
+      "records_rejected": 0
+    },
+    {
+      "transformation_id": "t_010",
+      "transform_type": "IMPUTATION",
+      "source_fields": [
+        "f_labevents_hadm_id"
+      ],
+      "target_fields": [
+        "f_labevents_hadm_id"
+      ],
+      "logic": "Fill missing hadm_id with -1 to indicate lab result not linked to any admission",
+      "script_ref": "transform.py",
+      "timestamp": "2026-02-25 14:17:56",
+      "records_affected": 107727,
+      "records_rejected": 0
+    }
+  ]
+}
