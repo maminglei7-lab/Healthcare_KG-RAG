@@ -1,21 +1,17 @@
+"""
+Extract: Load all source CSV files from raw directory.
+Reads from config.py for paths and file list.
+"""
+
 import pandas as pd
 import os
+from config import RAW_DIR, SOURCE_FILES
 
-DEFAULT_RAW_DIR = r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\data\raw"
 
-FILES = [
-    "patients.csv.gz",
-    "admissions.csv.gz",
-    "diagnoses_icd.csv.gz",
-    "labevents.csv.gz",
-    "d_icd_diagnoses.csv.gz",
-    "d_labitems.csv.gz",
-]
-
-def load_all(raw_dir=DEFAULT_RAW_DIR):
-    """Load all source files and return dict: {TableName: DataFrame}"""
+def load_all(raw_dir=RAW_DIR):
+    """Load all source files and return dict: {table_name: DataFrame}"""
     tables = {}
-    for fname in FILES:
+    for fname in SOURCE_FILES:
         path = os.path.join(raw_dir, fname)
         table_name = fname.replace(".csv.gz", "")
         df = pd.read_csv(path, compression="gzip", low_memory=False)
@@ -23,6 +19,7 @@ def load_all(raw_dir=DEFAULT_RAW_DIR):
         print(f"[Extract] {table_name}: {len(df)} rows, {len(df.columns)} cols")
     return tables
 
+
 if __name__ == "__main__":
     tables = load_all()
-    print("\nAll files have finished loading!")
+    print(f"\nAll {len(tables)} files loaded from: {RAW_DIR}")

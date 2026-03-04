@@ -1,67 +1,82 @@
-import sys
-sys.path.append(r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\etl")
+"""
+ETL Main Entry Point
+Pipeline: Extract → Transform → Save → Quality Check
+
+All paths read from config.py — switch MODE there to toggle demo/full.
+"""
 
 import os
+import json
+import sys
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from config import MODE, RAW_DIR, CLEANED_DIR, LINEAGE_DIR, LINEAGE_PATH, print_config
 from extract import load_all
 from transform import transform_all
+from quality_check import run_quality_checks
 
-# ─────────────────────────────────────────────
-# Configuration: Switch between demo and full data
-# ─────────────────────────────────────────────
-MODE = "demo"   # Switch to "full" to view actual data
 
-PATHS = {
-    "demo": {
-        "raw":     r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\data\raw",
-        "cleaned": r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\data\cleaned",
-    },
-    "full": {
-        "raw":     r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\data\raw_full",
-        "cleaned": r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\data\cleaned_full",
-    }
-}
+def reset_lineage():
+    """Clear lineage.json before each run to prevent duplicate accumulation."""
+    os.makedirs(LINEAGE_DIR, exist_ok=True)
+    with open(LINEAGE_PATH, 'w', encoding='utf-8') as f:
+        json.dump({"lineage_records": []}, f)
+    print(f"[Lineage] Reset: {LINEAGE_PATH}")
 
-RAW_DIR     = PATHS[MODE]["raw"]
-CLEANED_DIR = PATHS[MODE]["cleaned"]
-
-# ─────────────────────────────────────────────
 
 def save_cleaned(tables):
+    """Save all cleaned DataFrames to CSV."""
     os.makedirs(CLEANED_DIR, exist_ok=True)
     for name, df in tables.items():
         out_path = os.path.join(CLEANED_DIR, f"{name}.csv")
         df.to_csv(out_path, index=False, encoding="utf-8")
         print(f"[Save] {name}.csv → {len(df)} rows")
 
-LINEAGE_PATH = r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\lineage\lineage.json"
-
-def reset_lineage():
-    """Clear lineage.json before each run to prevent duplicate accumulation."""
-    os.makedirs(os.path.dirname(LINEAGE_PATH), exist_ok=True)
-    with open(LINEAGE_PATH, 'w', encoding='utf-8') as f:
-        import json
-        json.dump({"lineage_records": []}, f)
-    print("[Lineage] lineage.json reset sucessfully")
 
 if __name__ == "__main__":
+    # ── Config ──
+    print("=" * 50)
+    print("  ETL Pipeline")
+    print("=" * 50)
+    print_config()
+
+    # ── Step 0: Reset lineage ──
+    print("\n" + "=" * 50)
+    print("  Step 0: Reset Lineage")
+    print("=" * 50)
     reset_lineage()
-    print(f"MODE: {MODE.upper()} | raw → {RAW_DIR}")
-    print("=" * 40)
-    print("Step 1: Extract")
-    print("=" * 40)
+
+    # ── Step 1: Extract ──
+    print("\n" + "=" * 50)
+    print("  Step 1: Extract")
+    print("=" * 50)
     raw = load_all(RAW_DIR)
 
-    print("\n" + "=" * 40)
-    print("Step 2: Transform")
-    print("=" * 40)
+    # ── Step 2: Transform ──
+    print("\n" + "=" * 50)
+    print("  Step 2: Transform")
+    print("=" * 50)
     cleaned = transform_all(raw)
 
-    print("\n" + "=" * 40)
-    print("Step 3: Save to cleaned/")
-    print("=" * 40)
+    # ── Step 3: Save ──
+    print("\n" + "=" * 50)
+    print("  Step 3: Save to cleaned/")
+    print("=" * 50)
     save_cleaned(cleaned)
 
-    print("\nETL Completed")
-    print(f"   MODE    : {MODE.upper()}")
-    print(f"   Cleaning → {CLEANED_DIR}")
-    print(f"   Lineage  → D:\\Desktop\\DAMG 7374\\healthcare_lineagetracking\\lineage\\lineage.json")
+    # ── Step 4: Quality Check ──
+    print("\n" + "=" * 50)
+    print("  Step 4: Quality Check")
+    print("=" * 50)
+    all_passed = run_quality_checks(CLEANED_DIR)
+
+    # ── Summary ──
+    print("\n" + "=" * 50)
+    print("  ETL Complete")
+    print("=" * 50)
+    print(f"  MODE:     {MODE.upper()}")
+    print(f"  Cleaned:  {CLEANED_DIR}")
+    print(f"  Lineage:  {LINEAGE_PATH}")
+    print(f"  Quality:  {'ALL PASSED' if all_passed else 'HAS FAILURES'}")
+    print("=" * 50)

@@ -341,7 +341,7 @@ itemid,label,fluid,category
 51714,Reflex HIV Confirmation,Blood,Chemistry
 51764,EE7,Blood,Chemistry
 51769,RUBIgGV,Blood,Chemistry
-51771,unknown,Blood,Chemistry
+51771,Unknown,Blood,Chemistry
 53145,Anti-GBM Antibody,Blood,Chemistry
 50862,Albumin,Blood,Chemistry
 50911,"Creatine Kinase, MB Isoenzyme",Blood,Chemistry
@@ -513,7 +513,7 @@ itemid,label,fluid,category
 51943,"Immunoelectrophoresis, Stool",Stool,Chemistry
 51936,Clostrid,Stool,Chemistry
 51927,"Albumin, Stool",Stool,Chemistry
-51955,unknown,Stool,Chemistry
+51955,Unknown,Stool,Chemistry
 51932,"Bilirubin, Total, Stool",Stool,Chemistry
 51949,"Total Protein, Stool",Stool,Chemistry
 51956,CDT027,Stool,Chemistry
@@ -1548,7 +1548,7 @@ itemid,label,fluid,category
 51419,Eosinophils,Other Body Fluid,Hematology
 52357,Iron,Other Body Fluid,Hematology
 52369,"Total Nucleated Cells, Other",Other Body Fluid,Hematology
-52374,unknown,Other Body Fluid,Hematology
+52374,Unknown,Other Body Fluid,Hematology
 51431,Monos,Other Body Fluid,Hematology
 52343,CD42,Other Body Fluid,Hematology
 52352,FETAL LUNG MATURITY - LBC,Other Body Fluid,Hematology
