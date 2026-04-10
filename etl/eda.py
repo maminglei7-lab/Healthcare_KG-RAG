@@ -1,199 +1,251 @@
 """
-EDA Script for MIMIC-IV Demo (7 tables)
-Purpose: Explore all tables before defining cleaning rules
-Output: Console report per table — shape, dtypes, nulls, unique counts, value samples
+Full Data EDA — Chunked version for large files.
+Incorporates all deep-dive checks from original demo EDA.
+Run from project root.
 """
 
-import pandas as pd
 import os
+import pandas as pd
+import numpy as np
+from config import RAW_DIR, MODE
 
-# ─────────────────────────────────────────────
-# Configuration: Switch between demo and full data
-# ─────────────────────────────────────────────
-MODE = "demo"   # Switch to "full" for real data
+RAW_FULL         = RAW_DIR
+CHUNK_SIZE       = 500_000
+MAX_CHUNKS_LARGE = 10    # ~5M rows sampled for labevents
+MAX_CHUNKS_MED   = 5     # ~2.5M rows for prescriptions
 
-PATHS = {
-    "demo": r"D:\Desktop\DAMG 7374\healthcare_lineagetracking\data\raw",
-    "full": r"D:\Desktop\project\data\raw_full",
-}
+def fmt(n): return f"{n:,}"
 
-RAW_DIR = PATHS[MODE]
+def null_and_empty(series):
+    """Return (null_count, empty_string_count) for a series."""
+    null_n  = series.isna().sum()
+    empty_n = (series.astype(str).str.strip() == "").sum()
+    return null_n, empty_n
 
-FILES = [
-    "patients.csv.gz",
-    "admissions.csv.gz",
-    "diagnoses_icd.csv.gz",
-    "labevents.csv.gz",
-    "d_icd_diagnoses.csv.gz",
-    "d_labitems.csv.gz",
-    "prescriptions.csv.gz",
-]
 
-def eda_table(name, df):
-    print(f"\n{'='*70}")
-    print(f"  TABLE: {name}")
-    print(f"{'='*70}")
+# ─────────────────────────────────────────────────────────────
+# Small files: full load + full deep dive
+# ─────────────────────────────────────────────────────────────
 
-    # ── Basic Shape ──
-    print(f"\n[Shape] {df.shape[0]} rows × {df.shape[1]} columns")
+def eda_small(filename):
+    path = os.path.join(RAW_FULL, filename)
+    name = filename.replace(".csv.gz", "")
+    df   = pd.read_csv(path, compression="gzip", low_memory=False)
 
-    # ── Null Analysis ──
-    print(f"\n[Null Analysis]")
-    print(f"  {'Column':<30} {'Dtype':<15} {'Nulls':>8} {'Null%':>8} {'Unique':>8}")
-    print(f"  {'-'*30} {'-'*15} {'-'*8} {'-'*8} {'-'*8}")
+    print(f"\nTABLE: {name.upper()}  |  rows: {fmt(len(df))}  |  cols: {len(df.columns)}")
+    print(f"Columns: {list(df.columns)}")
+
+    # Null + empty string table
+    print(f"\n{'  Column':<35} {'Dtype':<12} {'Nulls':>8} {'Null%':>7}  {'Empty_str':>9}")
+    print(f"  {'-'*35} {'-'*12} {'-'*8} {'-'*7}  {'-'*9}")
     for col in df.columns:
-        null_count = df[col].isna().sum()
-        null_pct = f"{null_count / len(df) * 100:.1f}%"
-        unique = df[col].nunique()
-        dtype = str(df[col].dtype)
-        flag = " ⚠️" if null_count > 0 else ""
-        print(f"  {col:<30} {dtype:<15} {null_count:>8} {null_pct:>8} {unique:>8}{flag}")
+        null_n, empty_n = null_and_empty(df[col])
+        flag = " *" if null_n > 0 or empty_n > 0 else ""
+        print(f"  {col:<35} {str(df[col].dtype):<12} {fmt(null_n):>8} "
+              f"{null_n/len(df)*100:>6.1f}%  {fmt(empty_n):>9}{flag}")
 
-    # ── Key Field Deep Dive (table-specific) ──
+    # Deep dive
     print(f"\n[Key Field Details]")
-    _deep_dive(name, df)
+    _deep_dive_small(name, df)
 
-    # ── Sample Rows ──
-    print(f"\n[Sample Data (first 3 rows)]")
-    print(df.head(3).to_string(index=False, max_colwidth=40))
+    return df
 
 
-def _deep_dive(name, df):
-    """Table-specific field analysis focused on graph schema needs"""
+def _deep_dive_small(name, df):
+    N = len(df)
 
     if name == "patients":
-        _show_value_counts(df, "gender")
-        _show_numeric_stats(df, "anchor_age")
-        _show_value_counts(df, "dod", top_n=5, show_empty=True)
+        _vc(df, "gender", N)
+        _num_stats(df, "anchor_age")
+        dod_null = df["dod"].isna().sum()
+        print(f"\n  dod null (alive): {fmt(dod_null)} ({dod_null/N*100:.1f}%)")
 
     elif name == "admissions":
-        _show_value_counts(df, "admission_type")
-        _show_value_counts(df, "insurance")
-        _show_value_counts(df, "language", show_empty=True)
-        _show_value_counts(df, "marital_status", show_empty=True)
-        _show_value_counts(df, "race")
-        # Check timestamp nulls
+        _vc(df, "admission_type", N)
+        _vc(df, "insurance", N)
+        _vc(df, "marital_status", N)
+        _vc(df, "race", N, top_n=8)
+        print(f"\n  Timestamp null counts:")
         for col in ["admittime", "dischtime", "deathtime", "edregtime", "edouttime"]:
-            null_n = df[col].isna().sum()
-            empty_n = (df[col] == "").sum() if df[col].dtype == object else 0
-            print(f"  {col}: null={null_n}, empty_string={empty_n}")
+            null_n, empty_n = null_and_empty(df[col])
+            print(f"    {col:<20} null={fmt(null_n)}  empty_str={fmt(empty_n)}")
 
     elif name == "diagnoses_icd":
-        _show_value_counts(df, "icd_version")
-        print(f"  Unique icd_code count: {df['icd_code'].nunique()}")
+        _vc(df, "icd_version", N)
+        print(f"\n  Unique icd_code: {df['icd_code'].nunique()}")
         print(f"  Unique (subject_id, hadm_id) pairs: {df.groupby(['subject_id','hadm_id']).ngroups}")
-        # Check for duplicates on primary key
         dup = df.duplicated(subset=["subject_id", "hadm_id", "seq_num"]).sum()
-        print(f"  Duplicates on (subject_id, hadm_id, seq_num): {dup}")
-
-    elif name == "labevents":
-        _show_numeric_stats(df, "valuenum")
-        _show_value_counts(df, "flag", show_empty=True)
-        # ref_range analysis — critical for Layer 2
-        print(f"\n  --- Reference Range Analysis (Layer 2 critical) ---")
-        ref_lower_null = df["ref_range_lower"].isna().sum()
-        ref_upper_null = df["ref_range_upper"].isna().sum()
-        both_present = df["ref_range_lower"].notna() & df["ref_range_upper"].notna()
-        print(f"  ref_range_lower null: {ref_lower_null} ({ref_lower_null/len(df)*100:.1f}%)")
-        print(f"  ref_range_upper null: {ref_upper_null} ({ref_upper_null/len(df)*100:.1f}%)")
-        print(f"  Both ranges present:  {both_present.sum()} ({both_present.sum()/len(df)*100:.1f}%)")
-        # hadm_id null — affects relationship building
-        hadm_null = df["hadm_id"].isna().sum()
-        print(f"  hadm_id null: {hadm_null} ({hadm_null/len(df)*100:.1f}%) — these cannot link to Admission")
-        # Sample of abnormal flags
-        if "flag" in df.columns:
-            abnormal = df[df["flag"] == "abnormal"]
-            print(f"  Rows flagged 'abnormal': {len(abnormal)} ({len(abnormal)/len(df)*100:.1f}%)")
-
-    elif name == "prescriptions":
-        print(f"\n  --- Prescription Key Fields ---")
-        _show_value_counts(df, "drug_type")
-        print(f"  Unique drug names: {df['drug'].nunique()}")
-        print(f"  Top 10 drugs:")
-        for drug, cnt in df["drug"].value_counts().head(10).items():
-            print(f"    {drug}: {cnt}")
-        # Null analysis on key fields for Medication node
-        for col in ["drug", "dose_val_rx", "dose_unit_rx", "route", "hadm_id"]:
-            null_n = df[col].isna().sum()
-            empty_n = (df[col].astype(str).str.strip() == "").sum()
-            print(f"  {col}: null={null_n}, empty_string={empty_n}")
-        _show_value_counts(df, "route", top_n=10)
+        print(f"  Duplicates on (subject_id, hadm_id, seq_num): {fmt(dup)}")
 
     elif name == "d_icd_diagnoses":
-        _show_value_counts(df, "icd_version")
+        _vc(df, "icd_version", N)
         print(f"  Unique icd_code: {df['icd_code'].nunique()}")
-        null_title = df["long_title"].isna().sum()
-        print(f"  long_title null: {null_title}")
-        # ICD hierarchy preview — needed for Layer 2
-        print(f"\n  --- ICD Hierarchy Preview (Layer 2) ---")
-        sample_10 = df[df["icd_version"] == 10].head(10)
-        if len(sample_10) > 0:
-            for _, row in sample_10.iterrows():
-                code = str(row["icd_code"])
-                parent = code[:3] if len(code) > 3 else code
-                print(f"    {code} → parent: {parent} | {row['long_title'][:60]}")
-        sample_9 = df[df["icd_version"] == 9].head(5)
-        if len(sample_9) > 0:
-            print(f"  ICD-9 samples:")
-            for _, row in sample_9.iterrows():
-                code = str(row["icd_code"])
-                parent = code[:3] if len(code) > 3 else code
-                print(f"    {code} → parent: {parent} | {row['long_title'][:60]}")
+        print(f"  long_title null: {df['long_title'].isna().sum()}")
+        print(f"\n  ICD-10 hierarchy preview (first 10):")
+        for _, row in df[df["icd_version"] == 10].head(10).iterrows():
+            code   = str(row["icd_code"])
+            parent = code[:3] if len(code) > 3 else code
+            print(f"    {code} → parent: {parent} | {str(row['long_title'])[:60]}")
+        print(f"\n  ICD-9 hierarchy preview (first 5):")
+        for _, row in df[df["icd_version"] == 9].head(5).iterrows():
+            code   = str(row["icd_code"])
+            parent = code[:3] if len(code) > 3 else code
+            print(f"    {code} → parent: {parent} | {str(row['long_title'])[:60]}")
 
     elif name == "d_labitems":
-        _show_value_counts(df, "category")
-        _show_value_counts(df, "fluid")
-        print(f"  Unique itemid: {df['itemid'].nunique()}")
-        null_label = df["label"].isna().sum()
-        print(f"  label null: {null_label}")
+        _vc(df, "category", N)
+        _vc(df, "fluid", N)
+        print(f"\n  Unique itemid: {df['itemid'].nunique()}")
+        print(f"  label null: {df['label'].isna().sum()}")
 
 
-def _show_value_counts(df, col, top_n=5, show_empty=False):
+def _vc(df, col, N, top_n=5):
     print(f"\n  {col} distribution (top {top_n}):")
-    vc = df[col].value_counts(dropna=False).head(top_n)
-    for val, cnt in vc.items():
-        pct = cnt / len(df) * 100
-        display_val = repr(val) if pd.isna(val) or val == "" or val == "?" else val
-        print(f"    {display_val}: {cnt} ({pct:.1f}%)")
-    if show_empty:
-        empty_count = df[col].isna().sum() + (df[col].astype(str).str.strip() == "").sum()
-        if empty_count > 0:
-            print(f"    → Total empty/null: {empty_count}")
+    for val, cnt in df[col].value_counts(dropna=False).head(top_n).items():
+        display = repr(val) if pd.isna(val) or val == "" else val
+        print(f"    {display}: {fmt(cnt)} ({cnt/N*100:.1f}%)")
 
 
-def _show_numeric_stats(df, col):
-    if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
-        stats = df[col].describe()
-        print(f"\n  {col} stats:")
-        print(f"    min={stats['min']:.2f}, 25%={stats['25%']:.2f}, "
-              f"median={stats['50%']:.2f}, 75%={stats['75%']:.2f}, max={stats['max']:.2f}")
-        print(f"    mean={stats['mean']:.2f}, std={stats['std']:.2f}")
-    else:
-        # Try converting
-        numeric = pd.to_numeric(df[col], errors="coerce")
-        null_after = numeric.isna().sum() - df[col].isna().sum()
-        if null_after > 0:
-            print(f"\n  {col}: {null_after} values failed numeric conversion")
-        if numeric.notna().sum() > 0:
-            stats = numeric.describe()
-            print(f"  {col} numeric stats (convertible values only):")
-            print(f"    min={stats['min']:.2f}, median={stats['50%']:.2f}, max={stats['max']:.2f}")
+def _num_stats(df, col):
+    s = pd.to_numeric(df[col], errors="coerce").dropna()
+    if len(s):
+        print(f"\n  {col}: min={s.min():.1f}  25%={s.quantile(.25):.1f}  "
+              f"median={s.median():.1f}  75%={s.quantile(.75):.1f}  "
+              f"max={s.max():.1f}  mean={s.mean():.1f}")
 
 
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+# Large files: chunked
+# ─────────────────────────────────────────────────────────────
+
+def eda_labevents(max_chunks=MAX_CHUNKS_LARGE):
+    path = os.path.join(RAW_FULL, "labevents.csv.gz")
+    print(f"\nTABLE: LABEVENTS  (chunked, up to {fmt(max_chunks * CHUNK_SIZE)} rows sampled)")
+
+    total = 0
+    # null + empty string counters
+    null_counts  = {c: 0 for c in ["hadm_id","valuenum","ref_range_lower","ref_range_upper","value","valueuom"]}
+    empty_counts = {c: 0 for c in ["value","valueuom"]}
+    both_present = 0          # ref_range_lower AND upper both non-null
+    abnormal_cnt = 0
+    vnum_min, vnum_max, vnum_sum, vnum_n = np.inf, -np.inf, 0.0, 0
+    chunks_read  = 0
+
+    reader = pd.read_csv(path, compression="gzip", low_memory=False, chunksize=CHUNK_SIZE)
+    for chunk in reader:
+        if chunks_read == 0:
+            print(f"Columns: {list(chunk.columns)}")
+        total += len(chunk)
+
+        for c in null_counts:
+            if c in chunk.columns:
+                null_counts[c] += chunk[c].isna().sum()
+        for c in empty_counts:
+            if c in chunk.columns:
+                empty_counts[c] += (chunk[c].astype(str).str.strip() == "").sum()
+
+        mask = chunk["ref_range_lower"].notna() & chunk["ref_range_upper"].notna()
+        both_present += mask.sum()
+
+        if "flag" in chunk.columns:
+            abnormal_cnt += (chunk["flag"] == "abnormal").sum()
+
+        valid_vnum = pd.to_numeric(chunk["valuenum"], errors="coerce").dropna()
+        if len(valid_vnum):
+            vnum_min  = min(vnum_min, valid_vnum.min())
+            vnum_max  = max(vnum_max, valid_vnum.max())
+            vnum_sum += valid_vnum.sum()
+            vnum_n   += len(valid_vnum)
+
+        chunks_read += 1
+        if chunks_read >= max_chunks:
+            break
+
+    print(f"\nRows sampled: {fmt(total)}  (first {chunks_read} chunks)")
+
+    print(f"\nNull / empty rates:")
+    print(f"  {'Field':<30} {'Nulls':>10} {'Null%':>7}  {'Empty_str':>10}")
+    for c in null_counts:
+        ec    = empty_counts.get(c, 0)
+        null_n = null_counts[c]
+        print(f"  {c:<30} {fmt(null_n):>10} {null_n/total*100:>6.1f}%  {fmt(ec):>10}")
+
+    print(f"\n  Both ref ranges present: {fmt(both_present)} ({both_present/total*100:.1f}%)")
+    print(f"  Flagged 'abnormal':      {fmt(abnormal_cnt)} ({abnormal_cnt/total*100:.1f}%)")
+
+    vnum_mean = vnum_sum / vnum_n if vnum_n else float("nan")
+    print(f"\n  valuenum: min={vnum_min:.2f}  max={vnum_max:.2f}  mean={vnum_mean:.2f}  "
+          f"valid_n={fmt(vnum_n)}")
+
+    print(f"\n  [NOTE] hadm_id null = {null_counts['hadm_id']/total*100:.1f}% "
+          f"— these rows cannot link to Admission node")
+
+
+def eda_prescriptions(max_chunks=MAX_CHUNKS_MED):
+    path = os.path.join(RAW_FULL, "prescriptions.csv.gz")
+    print(f"\nTABLE: PRESCRIPTIONS  (chunked, up to {fmt(max_chunks * CHUNK_SIZE)} rows sampled)")
+
+    total = 0
+    null_counts  = {c: 0 for c in ["hadm_id","drug","dose_val_rx","dose_unit_rx","route"]}
+    empty_counts = {c: 0 for c in ["hadm_id","drug","dose_val_rx","dose_unit_rx","route"]}
+    drug_type_vc = {}
+    top_drugs    = {}
+    chunks_read  = 0
+
+    reader = pd.read_csv(path, compression="gzip", low_memory=False, chunksize=CHUNK_SIZE)
+    for chunk in reader:
+        if chunks_read == 0:
+            print(f"Columns: {list(chunk.columns)}")
+        total += len(chunk)
+
+        for c in null_counts:
+            if c in chunk.columns:
+                null_counts[c]  += chunk[c].isna().sum()
+                empty_counts[c] += (chunk[c].astype(str).str.strip() == "").sum()
+
+        if "drug_type" in chunk.columns:
+            for k, v in chunk["drug_type"].value_counts(dropna=False).items():
+                drug_type_vc[k] = drug_type_vc.get(k, 0) + v
+
+        if "drug" in chunk.columns:
+            for k, v in chunk["drug"].value_counts().head(20).items():
+                top_drugs[k] = top_drugs.get(k, 0) + v
+
+        chunks_read += 1
+        if chunks_read >= max_chunks:
+            break
+
+    print(f"\nRows sampled: {fmt(total)}  (first {chunks_read} chunks)")
+
+    print(f"\nNull / empty rates:")
+    print(f"  {'Field':<25} {'Nulls':>10} {'Null%':>7}  {'Empty_str':>10}")
+    for c in null_counts:
+        null_n = null_counts[c]
+        emp_n  = empty_counts[c]
+        print(f"  {c:<25} {fmt(null_n):>10} {null_n/total*100:>6.1f}%  {fmt(emp_n):>10}")
+
+    print(f"\n  drug_type distribution:")
+    for k, v in sorted(drug_type_vc.items(), key=lambda x: -x[1]):
+        print(f"    {k}: {fmt(v)} ({v/total*100:.1f}%)")
+
+    print(f"\n  Top 10 drugs (in sampled rows):")
+    for drug, cnt in sorted(top_drugs.items(), key=lambda x: -x[1])[:10]:
+        print(f"    {drug}: {fmt(cnt)}")
+
+
+# ─────────────────────────────────────────────────────────────
 # Main
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    print("=" * 70)
-    print(f"  MIMIC-IV EDA — MODE: {MODE.upper()} | Source: {RAW_DIR}")
-    print("=" * 70)
+    print(f"FULL DATA EDA — MIMIC-IV  |  MODE: {MODE.upper()}  |  Source: {RAW_DIR}")
 
-    for fname in FILES:
-        path = os.path.join(RAW_DIR, fname)
-        table_name = fname.replace(".csv.gz", "")
-        df = pd.read_csv(path, compression="gzip", low_memory=False)
-        eda_table(table_name, df)
+    eda_small("patients.csv.gz")
+    eda_small("admissions.csv.gz")
+    eda_small("diagnoses_icd.csv.gz")
+    eda_small("d_icd_diagnoses.csv.gz")
+    eda_small("d_labitems.csv.gz")
+    eda_labevents()
+    eda_prescriptions()
 
-    print(f"\n{'='*70}")
-    print("  EDA Complete")
-    print(f"{'='*70}")
+    print("\nEDA COMPLETE")

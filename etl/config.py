@@ -8,7 +8,7 @@ import os
 # ─────────────────────────────────────────────
 # Mode Switch: "demo" or "full"
 # ─────────────────────────────────────────────
-MODE = "demo"
+MODE = "full"
 
 # ─────────────────────────────────────────────
 # Base Directories
@@ -22,9 +22,9 @@ BASE_PATHS = {
         "graph_input": os.path.join(PROJECT_ROOT, "data", "graph_input"),
     },
     "full": {
-        "raw":         r"D:\Desktop\project\data\raw_full",
-        "cleaned":     r"D:\Desktop\project\data\cleaned_full",
-        "graph_input": r"D:\Desktop\project\data\graph_input_full",
+        "raw":         os.path.join(PROJECT_ROOT, "data", "raw_full"),
+        "cleaned":     os.path.join(PROJECT_ROOT, "data", "cleaned_full"),
+        "graph_input": os.path.join(PROJECT_ROOT, "data", "graph_input_full"),
     },
 }
 
@@ -51,6 +51,12 @@ SOURCE_FILES = [
 ]
 
 # ─────────────────────────────────────────────
+# Chunked Loading (large files, avoid OOM) (when you add any file here, also add to SOURCE_FILES and update transform_all in transform.py and CHUNKED_TRANSFORMS in run_etl.py)
+# ─────────────────────────────────────────────
+CHUNKED_FILES = ["labevents.csv.gz", "prescriptions.csv.gz"]
+CHUNK_SIZE    = 500_000   # rows per chunk
+
+# ─────────────────────────────────────────────
 # Table Metadata
 # ─────────────────────────────────────────────
 TABLE_NAMES = [f.replace(".csv.gz", "") for f in SOURCE_FILES]
@@ -68,9 +74,9 @@ TABLE_DESCRIPTIONS = {
 # ─────────────────────────────────────────────
 # Neo4j Connection
 # ─────────────────────────────────────────────
-NEO4J_URI      = "neo4j://127.0.0.1:7687"
+NEO4J_URI      = "bolt://127.0.0.1:7687"
 NEO4J_USERNAME = "neo4j"
-NEO4J_PASSWORD = "Mml19980131!!!!"
+NEO4J_PASSWORD = "m19980131"
 NEO4J_DATABASE = "neo4j"
 
 # ─────────────────────────────────────────────

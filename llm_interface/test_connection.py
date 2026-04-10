@@ -32,7 +32,7 @@ def test_connection():
         print("=" * 50)
         result = session.run("""
             MATCH (p:Patient)-[:HAD_ADMISSION]->(a)-[:HAS_DIAGNOSIS]->(d)
-            RETURN p.subjectId AS patient, d.icdCode AS icd, d.longTitle AS diagnosis
+            RETURN p.subjectId AS patient, d.icdCode AS icd, d.icdTitle AS diagnosis
             LIMIT 5
         """)
         for r in result:

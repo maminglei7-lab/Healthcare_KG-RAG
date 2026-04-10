@@ -218,10 +218,8 @@ for msg in st.session_state.messages:
 # =============================================================
 # Chat Input
 # =============================================================
-if "input_query" in st.session_state:
-    user_input = st.session_state.pop("input_query")
-else:
-    user_input = st.chat_input("Ask a medical question...")
+chat_input = st.chat_input("Ask a medical question...")
+user_input = st.session_state.pop("input_query", None) or chat_input
 
 if user_input:
     st.session_state.messages.append({"role": "user", "content": user_input})
@@ -281,6 +279,15 @@ if user_input:
             total_records = sum(len(sr["results"]) for sr in all_sub_results)
 
             status.update(label="✅ Pipeline complete!", state="complete", expanded=False)
+
+            components.html("""
+            <script>
+                window.parent.document.querySelector('section.main').scrollTo({
+                    top: window.parent.document.querySelector('section.main').scrollHeight,
+                    behavior: 'smooth'
+                });
+            </script>
+            """, height=0)
 
         # Display answer
         st.markdown(answer)

@@ -23,8 +23,8 @@ GRAPH_SCHEMA = """
 Neo4j Graph Schema:
 
 Node Labels and Properties:
-- Patient: patientId, subjectId, gender, anchorAge, anchorYear
-- Admission: admissionId, hadmId, admitTime, dischargeTime, admissionType, insurance, language, maritalStatus, race
+- Patient: patientId (string, format "p_10014729"), subjectId (integer, format 10014729), gender, anchorAge, anchorYear
+- Admission: hadmId (integer, use this to match specific admissions e.g. {hadmId: 26415640}), admissionId (internal ID, do NOT use for matching), admitTime, dischargeTime, admissionType, insurance, language, maritalStatus, race
 - Diagnosis: diagnosisId, icdCode, icdVersion, icdTitle
 - Medication: medicationId, drugName
 - LabTest: labTestId, itemId, label, fluid, category
@@ -33,14 +33,17 @@ Node Labels and Properties:
 Relationships:
 - (Patient)-[:HAD_ADMISSION]->(Admission)
 - (Admission)-[:HAS_DIAGNOSIS {seqNum}]->(Diagnosis)
-- (Admission)-[:HAS_LAB_RESULT {value, flag, refRangeLower, refRangeUpper, chartTime}]->(LabTest)
+- (Admission)-[:HAS_LAB_RESULT {value, flag, outlier, refRangeLower, refRangeUpper, chartTime, valueuom}]->(LabTest)
 - (Admission)-[:HAS_PRESCRIPTION {doseVal, doseUnit, route, drugType, startTime, stopTime}]->(Medication)
 - (Diagnosis)-[:BELONGS_TO_CATEGORY]->(ICD_Category)
 
 Important Notes:
 - Patient.patientId format: "p_10014729" (string with p_ prefix)
 - Patient.subjectId format: 10014729 (integer, no prefix)
-- flag values in HAS_LAB_RESULT: "normal" or "abnormal"
+- flag values in HAS_LAB_RESULT: "normal" or "abnormal" (original MIMIC-IV field)
+- outlier in HAS_LAB_RESULT: boolean (true = ETL-flagged as statistical outlier based on refRangeLower/Upper)
+- IMPORTANT: To filter abnormal/outlier lab results, use r.outlier = true (NOT r.flag = 'abnormal')
+- IMPORTANT: To match a specific admission by ID, always use hadmId (integer): {hadmId: 26415640}. Never use admissionId for matching.
 - When user mentions a patient number like "10014729", use subjectId (integer) to match
 - When aggregating medications, use Medication.drugName
 - ICD_Category links Diagnosis to broader disease categories
@@ -88,11 +91,26 @@ Rules:
 2. Always use LIMIT to avoid returning too many results (default LIMIT 20).
 3. For patient lookups by number, use subjectId (integer): MATCH (p:Patient {{subjectId: 10014729}})
 4. For aggregation queries, use COUNT, COLLECT, AVG, etc.
-5. When filtering abnormal lab results, use: WHERE r.flag = 'abnormal'
+5. When filtering abnormal lab results, use: WHERE r.outlier = true
 6. For medication queries, return drugName.
 7. Always return meaningful properties, not just node references.
 8. IMPORTANT: For disease/diagnosis name matching, NEVER use exact match. Always use CONTAINS or STARTS WITH for fuzzy matching. Example: WHERE d.icdTitle CONTAINS 'angina' (use lowercase with toLower()).
 9. When searching by disease category, prefer matching via ICD_Category.title with CONTAINS.
+10. IMPORTANT: Always start traversal from the SMALLEST node set first to avoid memory errors.
+    HAS_LAB_RESULT has 84M rows and HAS_PRESCRIPTION has 20M rows — never start from these.
+    Always filter to a small node set first, then traverse into large relationships last.
+    GOOD pattern:
+      MATCH (c:ICD_Category) WHERE toLower(c.title) CONTAINS 'heart failure'
+      MATCH (d:Diagnosis)-[:BELONGS_TO_CATEGORY]->(c)
+      MATCH (a:Admission)-[:HAS_DIAGNOSIS]->(d)
+      MATCH (a)-[r:HAS_LAB_RESULT]->(l:LabTest) WHERE r.flag = 'abnormal'
+      RETURN l.label, COUNT(*) ORDER BY COUNT(*) DESC LIMIT 20
+    BAD pattern:
+      MATCH (a)-[r:HAS_LAB_RESULT]->(l), (a)-[:HAS_DIAGNOSIS]->(d)-[:BELONGS_TO_CATEGORY]->(c)
+      WHERE r.flag = 'abnormal' AND toLower(c.title) CONTAINS 'heart failure'
+11. CRITICAL: To identify abnormal lab results, ALWAYS use r.outlier = true. NEVER use r.flag = 'abnormal'.
+12. CRITICAL: When querying medications, ALWAYS filter out Not Formulary entries: WHERE NOT toLower(m.drugName) STARTS WITH '*nf'
+13. CRITICAL: To match a specific admission, ALWAYS use hadmId (integer), NEVER use admissionId. Example: MATCH (a:Admission {{hadmId: 26415640}})
 """),
     ("human", "{question}")
 ])
@@ -160,7 +178,6 @@ class GraphRAGPipeline:
             elif line and not line.upper().startswith("SINGLE"):
                 sub_questions.append(line)
 
-        # Fallback: if decomposition failed, use original
         if not sub_questions:
             return [question]
 
@@ -188,7 +205,6 @@ class GraphRAGPipeline:
         print(f"  Cypher: {cypher}")
         return cypher
 
-    # Keep old method name for backward compatibility with app.py
     def stage1_generate_cypher(self, question: str) -> str:
         return self.stage1b_generate_cypher(question)
 
@@ -235,7 +251,6 @@ class GraphRAGPipeline:
                                 seen_nodes.add(node_id)
                                 label = list(val.labels)[0] if val.labels else "Unknown"
                                 props = dict(val)
-                                # Build user-friendly display name by node type
                                 if label == "Patient":
                                     sid = props.get("subjectId", "")
                                     age = props.get("anchorAge", "")
@@ -301,19 +316,36 @@ class GraphRAGPipeline:
 
     def _build_subgraph_cypher(self, original_cypher: str) -> str:
         """Convert original Cypher to a subgraph extraction query.
-        Injects variable names into anonymous relationships so they can be RETURNed."""
+
+        Strategy:
+        - Keep all MATCH clauses with their immediately following WHERE clauses
+        - Drop WITH clauses entirely (not needed for subgraph traversal, and
+          they break variable scoping when naively re-ordered)
+        - Inject variable names into anonymous relationships so they can be RETURNed
+        - Build RETURN from all collected variable names + LIMIT 30
+        """
         try:
-            lines = original_cypher.split("\n")
-            match_parts = []
-            other_parts = []
-            for line in lines:
-                stripped = line.strip().upper()
-                if stripped.startswith("MATCH"):
-                    match_parts.append(line.strip())
-                elif stripped.startswith("WHERE") or stripped.startswith("WITH"):
-                    other_parts.append(line.strip())
-                elif stripped.startswith("RETURN") or stripped.startswith("ORDER") or stripped.startswith("LIMIT"):
-                    break
+            lines = [l.strip() for l in original_cypher.split("\n") if l.strip()]
+            match_parts = []   # list of (match_line, [where_lines])
+            i = 0
+
+            while i < len(lines):
+                upper = lines[i].upper()
+                if upper.startswith("MATCH"):
+                    match_line = lines[i]
+                    where_lines = []
+                    # Consume any WHERE lines that directly follow
+                    j = i + 1
+                    while j < len(lines) and lines[j].upper().startswith("WHERE"):
+                        where_lines.append(lines[j])
+                        j += 1
+                    match_parts.append((match_line, where_lines))
+                    i = j
+                elif upper.startswith(("RETURN", "ORDER", "LIMIT")):
+                    break  # stop here
+                else:
+                    # Skip WITH, standalone WHERE after WITH, etc.
+                    i += 1
 
             if not match_parts:
                 return ""
@@ -322,28 +354,31 @@ class GraphRAGPipeline:
 
             def inject_rel_var(m):
                 bracket_content = m.group(1)
-                if re.match(r'^\w+\s*:', bracket_content) or re.match(r'^\w+\s*\]', bracket_content):
+                # Already has a variable name (starts with word chars then : or ])
+                if re.match(r'^\w+[\s:\]|]', bracket_content):
                     return m.group(0)
                 var_name = f"_r{counter[0]}"
                 counter[0] += 1
                 return f"[{var_name}{bracket_content}]"
 
-            new_match_parts = []
-            for part in match_parts:
-                new_part = re.sub(r'\[([^\]]*)\]', lambda m: inject_rel_var(m), part)
-                new_match_parts.append(new_part)
-
+            query_parts = []
             all_vars = set()
-            for part in new_match_parts:
-                node_vars = re.findall(r'\((\w+?)(?::|[\s\)])', part)
-                all_vars.update(node_vars)
-                rel_vars = re.findall(r'\[(\w+?)(?::|[\s\]])', part)
-                all_vars.update(rel_vars)
+
+            for match_line, where_lines in match_parts:
+                new_match = re.sub(r'\[([^\]]*)\]', inject_rel_var, match_line)
+                query_parts.append(new_match)
+                for wl in where_lines:
+                    query_parts.append(wl)
+
+                # Collect variable names from this MATCH line
+                node_vars = re.findall(r'\((\w+?)(?::|[\s\)])', new_match)
+                all_vars.update(v for v in node_vars if v)
+                rel_vars = re.findall(r'\[(\w+?)(?::|[\s\]])', new_match)
+                all_vars.update(v for v in rel_vars if v)
 
             if not all_vars:
                 return ""
 
-            query_parts = new_match_parts + other_parts
             return_vars = ", ".join(sorted(all_vars))
             query_parts.append(f"RETURN {return_vars}")
             query_parts.append("LIMIT 30")
@@ -356,7 +391,7 @@ class GraphRAGPipeline:
     # Stage 3: Answer Generation
     # ---------------------------------------------------------
     def stage3_generate_answer(self, question: str, cypher: str, results: list) -> str:
-        """Generate answer for a single query (backward compatible)."""
+        """Generate answer for a single query."""
         query_details = f"Cypher Query: {cypher}\n\nQuery Results: "
         results_str = json.dumps(results[:50], default=str, ensure_ascii=False)
         if len(results_str) > 3000:
@@ -398,12 +433,10 @@ class GraphRAGPipeline:
         print(f"Question: {question}")
         print(f"{'='*60}")
 
-        # Stage 1a: Decompose
         sub_questions = self.stage1a_decompose(question)
         is_compound = len(sub_questions) > 1
 
         if not is_compound:
-            # Simple question: original flow
             cypher = self.stage1b_generate_cypher(question)
             results = self.stage2_execute_query(cypher)
             subgraph = self.stage2_extract_subgraph(cypher)
@@ -418,7 +451,6 @@ class GraphRAGPipeline:
                 "sub_results": [],
             }
         else:
-            # Compound question: decompose → execute each → merge → answer
             all_sub_results = []
             merged_subgraph = {"nodes": [], "edges": []}
             all_cyphers = []
@@ -436,8 +468,6 @@ class GraphRAGPipeline:
                 })
 
             answer = self._stage3_generate_compound_answer(question, all_sub_results)
-
-            # Combine all results for record count
             all_results = []
             for sr in all_sub_results:
                 all_results.extend(sr["results"])
@@ -463,11 +493,8 @@ if __name__ == "__main__":
     pipeline = GraphRAGPipeline()
 
     demo_questions = [
-        # Simple
         "What diagnoses does patient 10014729 have?",
-        # Compound
         "What medications were prescribed for patient 10014729 and what were their diagnoses?",
-        # Aggregation
         "How many abnormal lab results does patient 10014729 have?",
     ]
 
