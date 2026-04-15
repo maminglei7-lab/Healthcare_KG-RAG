@@ -1,52 +1,85 @@
 # MedGraphRAG-EHR
-### Healthcare Knowledge Graph for Intelligent Medical Query via Graph RAG
 
-> A three-stage Graph RAG pipeline built on MIMIC-IV EHR data and Neo4j, inspired by [MedGraphRAG (ACL 2025)](https://arxiv.org/abs/2408.04187). Enables clinical researchers and data analysts to query complex patient data through natural language — no Cypher required.
+Healthcare Knowledge Graph for Intelligent Medical Query via Graph RAG
+
+Inspired by [MedGraphRAG (ACL 2025)](https://arxiv.org/abs/2408.04187), this project builds a Graph RAG pipeline on top of MIMIC-IV EHR data and Neo4j. Clinical researchers and data analysts can query complex patient data in plain English — no Cypher or SQL needed.
 
 ---
 
-## Overview
+## What it does
 
-Traditional EHR systems require SQL or graph query expertise to extract clinical insights. **MedGraphRAG-EHR** bridges this gap by combining a two-layer Healthcare Knowledge Graph with a three-stage Graph RAG pipeline, enabling natural language queries that return evidence-based, traceable answers with interactive reasoning path visualization.
+Most EHR systems require query expertise to extract useful insights. This system lets you ask questions like *"What medications are commonly prescribed for heart failure patients?"* and get back a structured, traceable answer with a visual reasoning path showing exactly how the system got there.
 
-**Key capabilities:**
-- Natural language → Cypher → structured answer, end-to-end
-- Multi-hop reasoning across Patient → Admission → Diagnosis → Medication → LabTest
-- Compound query decomposition (Agentic AI planning)
-- Interactive subgraph visualization with full reasoning path
-- Full-chain traceability: query-side (Graph RAG) + data-side (ETL lineage)
+Under the hood: natural language goes in, the LLM generates a Cypher query, Neo4j retrieves the relevant subgraph, and the LLM synthesizes an evidence-based answer. Compound questions (e.g. "What are the diagnoses and medications for patient X?") are automatically decomposed into sub-queries and merged.
 
 ---
 
 ## Architecture
 
-### Two-Layer Knowledge Graph
+### Knowledge Graph (Two Layers)
 
-```
-Layer 1 — Clinical Entity Graph
-  Patient → Admission → Diagnosis → ICD_Category
-                     → LabTest   (ref ranges on relationship)
-                     → Medication (dose/route on relationship)
+```mermaid
+graph LR
+    Patient -->|HAD_ADMISSION| Admission
+    Admission -->|HAS_DIAGNOSIS| Diagnosis
+    Admission -->|HAS_LAB_RESULT\nvalue, outlier, refRangeLower, refRangeUpper| LabTest
+    Admission -->|HAS_PRESCRIPTION\ndoseVal, route, startTime| Medication
+    Diagnosis -->|BELONGS_TO_CATEGORY| ICD_Category
 
-Layer 2 — Knowledge Enhancement
-  ICD_Category hierarchy  (standardized disease classification)
-  Lab reference ranges    (clinical context for anomaly detection)
+    style Patient fill:#6aaf6a,color:#fff
+    style Admission fill:#5b8dd9,color:#fff
+    style Diagnosis fill:#e07b39,color:#fff
+    style LabTest fill:#d4b94a,color:#fff
+    style Medication fill:#c47ab3,color:#fff
+    style ICD_Category fill:#7b68c8,color:#fff
 ```
 
-### Three-Stage Graph RAG Pipeline
+Layer 1 is the clinical entity graph — Patient, Admission, Diagnosis, LabTest, Medication — mapped directly from MIMIC-IV structured tables. Layer 2 adds knowledge enrichment: ICD category hierarchy for disease classification, and lab reference ranges on the `HAS_LAB_RESULT` relationship for anomaly detection. This replaces the paper's three-layer UMLS setup, which is designed for unstructured text; structured EHR data doesn't need it.
 
+### Graph RAG Pipeline (Three Stages)
+
+```mermaid
+graph TD
+    A[User Natural Language Question] --> B
+
+    subgraph Stage1 [Stage 1 — Intent Analysis & Query Planning]
+        B[Query Decomposition\nSINGLE or COMPOUND?] -->|Compound| C[Split into Sub-questions]
+        B -->|Single| D[Cypher Generation via LLM]
+        C --> D
+    end
+
+    subgraph Stage2 [Stage 2 — Graph Retrieval]
+        D --> E[Execute Cypher on Neo4j]
+        E --> F[Extract Subgraph\nnodes + relationships]
+    end
+
+    subgraph Stage3 [Stage 3 — Answer Generation]
+        F --> G[Evidence-based Answer via LLM]
+        F --> H[pyvis Reasoning Path Visualization]
+    end
+
+    G --> I[Final Response to User]
+    H --> I
 ```
-Stage 1a  Query Decomposition    Detect compound questions, split into sub-queries
-Stage 1b  Cypher Generation      LLM generates Neo4j Cypher from natural language
-Stage 2   Graph Retrieval        Execute Cypher, extract subgraph
-Stage 3   Answer Generation      Evidence-based response + pyvis reasoning visualization
-```
+
+---
+
+## Example Queries
+
+| Type | Question | What it tests |
+|---|---|---|
+| Single-hop fact | *How many admissions does patient p_15496609 have?* | Direct lookup |
+| Anomaly detection | *How many abnormal lab results does patient p_16846280 have?* | Layer 2 reference ranges |
+| Multi-hop relational | *What medications are prescribed for heart failure patients?* | 3-hop traversal via ICD category |
+| Backward tracing | *What diagnoses does patient p_10253349 have in admission 26415640?* | Reverse path traversal |
+| Cross-category aggregation | *What are the top 10 ICD categories by number of diagnoses?* | Graph aggregation |
+| Comprehensive summary | *Give a full summary of patient p_15496609's admissions, diagnoses, and medications.* | Compound query decomposition |
 
 ---
 
 ## Tech Stack
 
-| Component | Technology |
+| | |
 |---|---|
 | Graph Database | Neo4j |
 | LLM | OpenAI GPT-3.5-turbo (dev) / GPT-4 (prod) |
@@ -60,15 +93,12 @@ Stage 3   Answer Generation      Evidence-based response + pyvis reasoning visua
 
 ## Dataset Scale
 
-| Mode | Nodes | Relationships |
+|  | Nodes | Relationships |
 |---|---|---|
 | Demo | 4,785 | 103,649 |
 | Full | 954,151 | 111,837,073 |
 
-**Full dataset breakdown:**
-- Patient: 364,627 · Admission: 546,028 · Diagnosis: 28,581
-- Medication: 10,581 · LabTest: 1,650 · ICD_Category: 2,684
-- HAS_LAB_RESULT: 84.6M · HAS_PRESCRIPTION: 20.3M · HAS_DIAGNOSIS: 6.36M
+Full breakdown — Patient: 364,627 · Admission: 546,028 · Diagnosis: 28,581 · Medication: 10,581 · LabTest: 1,650 · ICD_Category: 2,684 · HAS_LAB_RESULT: 84.6M · HAS_PRESCRIPTION: 20.3M · HAS_DIAGNOSIS: 6.36M
 
 ---
 
@@ -76,54 +106,48 @@ Stage 3   Answer Generation      Evidence-based response + pyvis reasoning visua
 
 ```
 MedGraphRAG-EHR/
-├── etl/                        # ETL pipeline
-│   ├── config.py               # Centralized config (MODE = "demo"/"full")
-│   ├── eda.py                  # Exploratory data analysis (EDA-first methodology)
-│   ├── extract.py              # Raw data extraction
-│   ├── transform.py            # EDA-driven cleaning & transformation rules
-│   ├── build_graph_input.py    # Generate Neo4j-ready CSV files
-│   ├── run_etl.py              # End-to-end ETL runner
-│   ├── lineage_decorator.py    # capture_lineage decorator for provenance tracking
-│   └── quality_check.py        # 47 data quality assertions
-├── llm_interface/              # Graph RAG pipeline
-│   ├── config.py               # LLM_MODE switch (dev/prod)
-│   ├── graph_rag.py            # Core 3-stage pipeline + compound decomposition
-│   ├── app.py                  # Streamlit frontend + pyvis visualization
-│   ├── validate_results.py     # 3-layer validation framework
-│   ├── test_scenarios.py       # 6 query type test suite
-│   ├── check_schema.py         # Neo4j schema inspection utility
-│   └── test_connection.py      # Neo4j connection check
+├── etl/
+│   ├── config.py               # centralized config, MODE = "demo" / "full"
+│   ├── eda.py                  # exploratory analysis before writing any cleaning rules
+│   ├── extract.py
+│   ├── transform.py            # cleaning rules derived from EDA findings
+│   ├── build_graph_input.py    # outputs Neo4j-ready CSV files
+│   ├── run_etl.py              # runs the full pipeline end-to-end
+│   ├── lineage_decorator.py    # wraps transform functions to record provenance
+│   └── quality_check.py        # 47 assertions run after every ETL run
+├── llm_interface/
+│   ├── config.py               # LLM_MODE = "dev" / "prod"
+│   ├── graph_rag.py            # three-stage pipeline + compound query decomposition
+│   ├── app.py                  # Streamlit app + pyvis subgraph rendering
+│   ├── validate_results.py     # automated validation against ground-truth Cypher
+│   ├── test_scenarios.py       # six query type scenarios
+│   ├── check_schema.py
+│   └── test_connection.py
 ├── lineage/
-│   └── lineage.json            # ETL transformation provenance records
+│   └── lineage.json            # transformation provenance records
 ├── data/
-│   ├── raw/                    # MIMIC-IV demo source files
-│   ├── raw_full/               # MIMIC-IV full source files
-│   ├── cleaned/                # Demo post-ETL cleaned data
-│   ├── cleaned_full/           # Full post-ETL cleaned data
-│   ├── graph_input/            # Demo Neo4j-ready CSV files
-│   └── graph_input_full/       # Full Neo4j-ready CSV files
-└── .env                        # Neo4j + OpenAI credentials (not committed)
+│   ├── raw/                    # MIMIC-IV demo files
+│   ├── raw_full/               # MIMIC-IV full files
+│   ├── cleaned/                # demo cleaned output
+│   ├── cleaned_full/           # full cleaned output
+│   ├── graph_input/            # demo Neo4j CSVs
+│   └── graph_input_full/       # full Neo4j CSVs
+└── .env                        # credentials, not committed
 ```
 
 ---
 
-## Quick Start
+## Setup
 
-### Prerequisites
-- Python 3.9+
-- Neo4j Desktop (local) or Neo4j AuraDB
-- OpenAI API key
-- MIMIC-IV dataset ([access required](https://physionet.org/content/mimic-iv/))
-
-### Setup
+**Prerequisites:** Python 3.9+, Neo4j Desktop, OpenAI API key, MIMIC-IV access ([physionet.org](https://physionet.org/content/mimic-iv/))
 
 ```bash
-git clone https://github.com/maminglei7-lab/MedGraphRAG-EHR.git
+git clone https://github.com/your-username/MedGraphRAG-EHR.git
 cd MedGraphRAG-EHR
 pip install -r requirements.txt
 ```
 
-Create `.env` in project root:
+Create `.env` in the project root:
 ```
 NEO4J_URI=bolt://127.0.0.1:7687
 NEO4J_USER=neo4j
@@ -131,25 +155,18 @@ NEO4J_PASSWORD=your_password
 OPENAI_API_KEY=your_openai_key
 ```
 
-### Run ETL Pipeline
-
+**ETL** — set `MODE` in `etl/config.py` to `"demo"` or `"full"`, then:
 ```bash
-# Set MODE = "demo" or "full" in etl/config.py
-python etl/extract.py
-python etl/clean.py
-python etl/build_graph_input.py
-python etl/load_graph.py
+python etl/run_etl.py
 ```
 
-### Launch Application
-
+**App:**
 ```bash
 cd llm_interface
 streamlit run app.py
 ```
 
-### Run Validation
-
+**Validation:**
 ```bash
 cd llm_interface
 python validate_results.py
@@ -157,52 +174,49 @@ python validate_results.py
 
 ---
 
-## Validation Framework
+## Validation
 
-A three-layer validation framework ensures answer correctness beyond "the pipeline runs":
+We didn't want to just show that the pipeline runs — we wanted to know if the answers are actually correct. So we built a three-layer validation framework.
 
-| Layer | Method | Status |
-|---|---|---|
-| ETL Quality Checks | 47 assertions on cleaned data | 47/47 ✅ |
-| Ground-Truth Cypher | 6 human-approved GT queries | All approved ✅ |
-| Automated Scoring | Exact Match + Recall/Precision + Semantic Judge (GPT-3.5) | See below |
+Layer 1 is the ETL quality checks: 47 assertions that run after every ETL job (all pass). Layer 2 is six human-approved ground-truth Cypher queries, one per query type, verified manually in Neo4j Browser. Layer 3 is an automated script that runs each question through the full LLM pipeline and scores the output against the ground truth across three dimensions: exact match, recall/precision, and semantic equivalence judged by GPT-3.5.
 
-**Automated validation results:**
-
-| Query Type | Exact Match | Recall/Precision | Semantic Score |
+| Query Type | Exact Match | Recall / Precision | Semantic |
 |---|---|---|---|
 | GT1 Single-hop fact | ✅ | 100% | 100 |
 | GT2 Anomaly detection | ✅ | 100% | 95 |
-| GT3 Multi-hop relational | ⏭* | 100%* | 70 |
-| GT4 Backward tracing | ✅ | 100% | 70↑ |
+| GT3 Multi-hop relational | — * | 100% precision * | 70 |
+| GT4 Backward tracing | ✅ | 100% | 70 |
 | GT5 Cross-category aggregation | ✅ | 100% | 95 |
-| GT6 Comprehensive | ⏭** | N/A** | 95 |
+| GT6 Comprehensive | — ** | N/A ** | 95 |
 
-*GT3 uses Precision (LLM LIMIT 20 by design); GT3 semantic score reflects a known limitation: LIMIT truncation does not guarantee clinical relevance ordering.  
-**GT6 is a compound query; Exact/Recall not applicable, semantic evaluation only.
+\* GT3 uses precision rather than recall — the LLM returns 20 results by design (LIMIT 20), so exact match against a 4,400-item GT set isn't meaningful. The 70 semantic score reflects a real limitation: LIMIT truncation doesn't guarantee clinical relevance ordering. Furosemide and Metoprolol are valid answers; the system happened to return Sodium Chloride first because it comes first alphabetically.
 
----
-
-## Key Design Decisions
-
-**EDA-first methodology** — All cleaning rules derived from actual data inspection, not assumptions. Discovered 107,727 lab events with null `hadm_id`; 116 duplicate diagnosis rows; empty string vs null distinctions in lab units.
-
-**Graph traversal order** — With 84.6M `HAS_LAB_RESULT` relationships, Cypher queries must start from the smallest node set. Rule enforced in LLM prompt to prevent Java heap OOM.
-
-**Two layers vs paper's three** — The paper's three layers address unstructured text (document → literature → UMLS). Our structured EHR data eliminates the need for LLM-based entity extraction; ICD hierarchy + lab reference ranges serve the same knowledge-enrichment purpose in two layers.
-
-**Full-chain traceability** — The paper traces Answer → Graph → Literature/UMLS. We extend this to include ETL provenance: Answer → Graph → Raw MIMIC-IV, tracked via a `capture_lineage` decorator on all transformation functions.
+\*\* GT6 is a compound query that returns raw sub-results rather than aggregated counts, so exact match and recall don't apply.
 
 ---
 
-## Inspiration
+## A few design notes
 
-This project is inspired by and adapts methodology from:
+**EDA before cleaning** — every cleaning rule was written after looking at the actual data, not before. This caught things we wouldn't have anticipated: 107,727 lab events with no associated admission, 116 duplicate diagnosis rows, empty string vs null distinctions in lab units.
 
-> **MedGraphRAG: A Medical Graph RAG System**  
-> Ke, et al. ACL 2025 · [arXiv:2408.04187](https://arxiv.org/abs/2408.04187)
+**Traversal order matters at scale** — with 84.6M `HAS_LAB_RESULT` relationships, starting a Cypher traversal from the wrong end causes Java heap OOM. We added an explicit rule to the LLM prompt: always start from the smallest node set and expand outward.
 
-Key adaptations for structured EHR data:
-- Two-layer KG replacing three-layer document graph
-- LLM-driven Cypher planning replacing tag-based U-Retrieval
-- ETL lineage traceability as second dimension of full-chain traceability
+**Two layers instead of three** — the paper uses three layers because it's working with unstructured text that needs LLM-based entity extraction and disambiguation. Our data is already structured: ICD codes, standardized item IDs, drug names. Two layers cover the same ground with less complexity.
+
+**Full-chain traceability** — the paper traces answers back to source documents and UMLS definitions. We extended this in the other direction: a `capture_lineage` decorator wraps every ETL transform function and records what was changed, when, and why. This means you can trace any value in Neo4j back to the raw MIMIC-IV file it came from.
+
+---
+
+## Reference
+
+> Ke, et al. **MedGraphRAG: A Medical Graph RAG System.** ACL 2025. [arXiv:2408.04187](https://arxiv.org/abs/2408.04187)
+
+---
+
+## Team
+
+Minglei — ETL pipeline, data lineage, overall architecture  
+Yining Cai — Neo4j knowledge graph implementation  
+Guangyi Yang — LLM interface, Streamlit frontend, Graph RAG pipeline
+
+DAMG 7374 · LLM's with Knowledge Graph DB · Northeastern University · Spring 2026
