@@ -6,6 +6,16 @@ Inspired by [MedGraphRAG (ACL 2025)](https://arxiv.org/abs/2408.04187), this pro
 
 ---
 
+## Team
+
+- Minglei Ma
+- Guangyi Yang
+- Yining Cai
+
+This project builds a Healthcare Knowledge Graph on MIMIC-IV EHR data and implements a three-stage Graph RAG pipeline that lets clinical researchers and data analysts query complex patient records in plain English. Answers are evidence-based and traceable — every response includes a visual reasoning path showing exactly which nodes and relationships in Neo4j were used to produce it.
+
+---
+
 ## What it does
 
 Most EHR systems require query expertise to extract useful insights. This system lets you ask questions like *"What medications are commonly prescribed for heart failure patients?"* and get back a structured, traceable answer with a visual reasoning path showing exactly how the system got there.
